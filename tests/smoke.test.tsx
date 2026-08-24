@@ -6,13 +6,16 @@ import { createStore, type Store } from "../src/app-state.ts"
 
 const BOOT_KEY = " "
 
-async function bootApp(width = 120, height = 40) {
+async function bootApp(width = 120, height = 40, onQuit?: () => void) {
   const store = createStore()
-  const setup = await testRender(<App store={store} version="0.1.0-test" onQuit={() => {}} />, {
-    width,
-    height,
-    exitOnCtrlC: false,
-  })
+  const setup = await testRender(
+    <App store={store} version="0.1.0-test" onQuit={onQuit ?? (() => {})} />,
+    {
+      width,
+      height,
+      exitOnCtrlC: false,
+    },
+  )
   await setup.flush()
 
   const splash = setup.captureCharFrame()
@@ -139,6 +142,24 @@ describe("phase 0", () => {
     await press(setup, ["j"])
     expect(store.getState().quitting).toBe(false)
     expect(frameOf(setup)).not.toContain("confirm quit")
+    setup.renderer.destroy()
+  })
+
+  test("q q confirms quit and fires the onQuit lifecycle", async () => {
+    let quitCalled = false
+    const { store, setup } = await bootApp(120, 40, () => {
+      quitCalled = true
+    })
+    await press(setup, ["q"])
+    expect(store.getState().quitting).toBe(true)
+
+    await press(setup, ["q"])
+    expect(store.getState().quitConfirmed).toBe(true)
+    // App effect runs on state change; flush settles it
+    await setup.flush()
+    await new Promise((r) => setTimeout(r, 20))
+    await setup.flush()
+    expect(quitCalled).toBe(true)
     setup.renderer.destroy()
   })
 

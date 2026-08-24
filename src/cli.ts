@@ -20,14 +20,21 @@ function report(err: unknown): void {
   console.error(`full log: ${ERROR_LOG}`)
 }
 
-process.on("uncaughtException", (err) => {
+// last-ditch terminal restore if anything blows up mid-render
+let liveRenderer: { destroy(): void } | null = null
+
+function fatal(err: unknown): never {
   report(err)
+  try {
+    liveRenderer?.destroy()
+  } catch {
+    // already gone
+  }
   process.exit(1)
-})
-process.on("unhandledRejection", (err) => {
-  report(err)
-  process.exit(1)
-})
+}
+
+process.on("uncaughtException", (err) => fatal(err))
+process.on("unhandledRejection", (err) => fatal(err))
 
 const USAGE = `ndjoshi-tui v${VERSION} — narayan joshi's portfolio, as a real terminal app
 
@@ -47,6 +54,8 @@ interface CliOptions {
   themeId: string
   screen?: string
 }
+
+const implementedScreens = ["home", "about", "work"]
 
 function parseArgs(argv: string[]): { options: CliOptions; error?: string; help?: boolean } {
   const options: CliOptions = { themeId: DEFAULT_THEME_ID }
@@ -132,6 +141,7 @@ async function main(): Promise<number> {
       clearOnShutdown: true,
       backgroundColor: theme.bg,
     })
+    liveRenderer = renderer
   } catch (err) {
     report(err)
     console.error("")
@@ -141,18 +151,35 @@ async function main(): Promise<number> {
     return 1
   }
 
-  const root = mountAppFn(renderer, {
-    store,
-    version: VERSION,
-    onQuit: () => {
-      root.unmount()
+  // stay alive until the app quits; main() resolving must NOT exit the
+  // process — the render loop owns this process from here on
+  try {
+    await new Promise<void>((resolve) => {
+      const root = mountAppFn(renderer, {
+        store,
+        version: VERSION,
+        onQuit: () => {
+          try {
+            root.unmount()
+          } catch {
+            // root may already be gone
+          }
+          renderer.destroy()
+          // let the terminal-restore bytes drain before exiting
+          setTimeout(resolve, 60)
+        },
+      })
+    })
+  } catch (err) {
+    report(err)
+    try {
       renderer.destroy()
-      process.exit(0)
-    },
-  })
+    } catch {
+      // best effort — never leave the terminal in raw/alt-screen modes
+    }
+    return 1
+  }
   return 0
 }
-
-const implementedScreens = ["home", "about", "work"]
 
 process.exit(await main())
