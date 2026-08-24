@@ -1,0 +1,40 @@
+{
+  "name": "ndjoshi-tui",
+  "version": "0.1.0",
+  "description": "Narayan Joshi's portfolio as a real full-screen terminal application. bunx ndjoshi-tui",
+  "type": "module",
+  "bin": {
+    "ndjoshi-tui": "./bin/ndjoshi-tui.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "src",
+    "data"
+  ],
+  "engines": {
+    "bun": ">=1.3"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "json": "bun run src/cli.ts --json",
+    "resume": "bun run src/cli.ts --resume"
+  },
+  "keywords": [
+    "tui",
+    "portfolio",
+    "terminal",
+    "opentui"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@opentui/core": "^0.5.8",
+    "@opentui/react": "^0.5.8",
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "@types/react": "^19.2.18",
+    "typescript": "^7.0.2"
+  }
+}
