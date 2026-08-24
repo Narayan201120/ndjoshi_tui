@@ -1,10 +1,33 @@
-import { createCliRenderer } from "@opentui/core"
-import { mountApp, implementedScreens } from "./app.tsx"
-import { createStore } from "./app-state.ts"
+import { appendFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { DEFAULT_THEME_ID, getTheme, THEMES } from "./themes/index.ts"
 import { SCREEN_LABELS } from "./keymap.ts"
+import { createStore } from "./app-state.ts"
 
 export const VERSION = "0.1.0"
+
+const ERROR_LOG = join(tmpdir(), "ndjoshi-tui-error.log")
+
+function report(err: unknown): void {
+  const msg = err instanceof Error ? (err.stack ?? err.message) : String(err)
+  try {
+    appendFileSync(ERROR_LOG, `[${new Date().toISOString()}]\n${msg}\n\n`)
+  } catch {
+    // nowhere to write; stderr is all we have
+  }
+  console.error(`ndjoshi-tui error: ${msg.split("\n")[0]}`)
+  console.error(`full log: ${ERROR_LOG}`)
+}
+
+process.on("uncaughtException", (err) => {
+  report(err)
+  process.exit(1)
+})
+process.on("unhandledRejection", (err) => {
+  report(err)
+  process.exit(1)
+})
 
 const USAGE = `ndjoshi-tui v${VERSION} — narayan joshi's portfolio, as a real terminal app
 
@@ -67,6 +90,15 @@ async function main(): Promise<number> {
     return 0
   }
 
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error(
+      "ndjoshi-tui is a full-screen terminal application and needs a real TTY.\n" +
+        "open windows terminal (or another real terminal), cd into the project,\n" +
+        "and run it directly — not through a pipe, job, or non-interactive shell.",
+    )
+    return 1
+  }
+
   const theme = getTheme(options.themeId)
   if (theme.id !== options.themeId) {
     console.error(`ndjoshi-tui: unknown theme "${options.themeId}"\n\n${USAGE}`)
@@ -75,23 +107,25 @@ async function main(): Promise<number> {
 
   const store = createStore()
   if (options.screen) {
-    if (options.screen === "work") {
-      store.dispatch({ type: "goto", id: "work" })
-    } else {
-      const idx = implementedScreens().indexOf(options.screen as never)
-      if (idx < 0) {
-        console.error(
-          `ndjoshi-tui: unknown screen "${options.screen}"\navailable in this build: ${implementedScreens().join(", ")}\n`,
-        )
-        return 1
-      }
-      store.dispatch({ type: "gotoIndex", index: idx })
+    const idx = SCREEN_LABELS.indexOf(options.screen as never)
+    if (idx < 0 || implementedScreens.indexOf(options.screen as never) < 0) {
+      console.error(
+        `ndjoshi-tui: unknown screen "${options.screen}"\navailable in this build: ${implementedScreens.join(", ")}\n`,
+      )
+      return 1
     }
+    store.dispatch({ type: "gotoIndex", index: idx })
   }
 
   let renderer
+  let mountAppFn
   try {
-    renderer = await createCliRenderer({
+    // dynamic imports so a native-lib failure lands in our handler with a
+    // readable message instead of a raw stack dump flashing past
+    const core = await import("@opentui/core")
+    const ui = await import("./app.tsx")
+    mountAppFn = ui.mountApp
+    renderer = await core.createCliRenderer({
       exitOnCtrlC: false,
       useMouse: true,
       screenMode: "alternate-screen",
@@ -99,13 +133,15 @@ async function main(): Promise<number> {
       backgroundColor: theme.bg,
     })
   } catch (err) {
-    console.error("ndjoshi-tui: could not take over the terminal.")
-    console.error(String(err))
-    console.error("\nuse a real terminal — windows terminal on windows, not cmd.exe.")
+    report(err)
+    console.error("")
+    console.error("could not take over the terminal.")
+    console.error("- use windows terminal on windows (not cmd.exe, not a pipe)")
+    console.error("- make sure bun >= 1.3: bun upgrade")
     return 1
   }
 
-  const root = mountApp(renderer, {
+  const root = mountAppFn(renderer, {
     store,
     version: VERSION,
     onQuit: () => {
@@ -116,5 +152,7 @@ async function main(): Promise<number> {
   })
   return 0
 }
+
+const implementedScreens = ["home", "about", "work"]
 
 process.exit(await main())

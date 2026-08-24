@@ -100,15 +100,18 @@ describe("phase 0", () => {
     setup.renderer.destroy()
   })
 
-  test("t cycles everforest -> tokyo-night -> everforest", async () => {
+  test("t cycles through the registered theme ring", async () => {
     const { store, setup } = await bootApp()
     await press(setup, ["t"])
     expect(store.getState().themeId).toBe("tokyo-night")
     expect(frameOf(setup)).toContain("tokyo-night")
 
     await press(setup, ["t"])
+    expect(store.getState().themeId).toBe("catppuccin")
+
+    // full ring returns home (4 more: gruvbox, nord, synthwave84, everforest)
+    for (let i = 0; i < 4; i++) await press(setup, ["t"])
     expect(store.getState().themeId).toBe("everforest")
-    expect(frameOf(setup)).toContain("everforest")
     setup.renderer.destroy()
   })
 
